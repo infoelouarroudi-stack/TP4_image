@@ -195,9 +195,9 @@ class MyTNet(nn.Module):
 
 ```python
 x = [
-  [0.5, 0.8, 0.2],  # Point 1
-  [0.3, 0.6, 0.9],  # Point 2
-  [0.7, 0.4, 0.1]   # Point 3
+  [0.5, 0.8, 0.2],  
+  [0.3, 0.6, 0.9],  
+  [0.7, 0.4, 0.1]   
 ]
 # Shape: (1, 3, 3) = (batch=1, canaux_xyz=3, points=3)
 ```
