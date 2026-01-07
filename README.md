@@ -690,6 +690,33 @@ def bruit(points, sigma):
 max_sigma = 0.1  # Bruit maximal de 10%
 sigma = torch.rand(1).item() * max_sigma  # σ aléatoire [0, 0.1]
 points = bruit(points, sigma)
+
+
+
+-----------
+
+ for epoch in range(0, num_epochs):
+
+            for i, data in enumerate(trainloader, 0):
+
+                points, target = data
+                points, target = points.to(device), target.to(device)
+
+                sigma = torch.rand(1).item() * max_sigma
+                points = bruit(points, sigma)
+
+                optimizer.zero_grad()
+                output,tn1,tn2 = myptnet(points)
+                target = target.view(-1) # on veut un vecteur une dimension on met àplat pour comparer avec les class [0,1,2] vs [?] predit
+
+                reg1 = tnet_regularization(tn1)
+                reg2 = tnet_regularization(tn2)
+
+                loss = criterion(output, target) + 0.001 * (reg1 + reg2)
+                loss.backward()
+                optimizer.step()
+                losslog.append(loss.item())
+
 ```
 
 ### Exemple Concret
