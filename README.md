@@ -181,6 +181,93 @@ class MyTNet(nn.Module):
         # Reshape en matrice
         x = x.view(-1, self.dim, self.dim)  # (B, dim, dim)
         return x
+
+-----------------------------
+        class MyTNet(nn.Module):
+    def __init__(self, dim=3):
+        super(MyTNet, self).__init__()
+
+
+        self.dim = dim
+
+        self.conv1 = Conv1d(in_channels=dim, out_channels=64,kernel_size=1)
+        self.bach1 = nn.BatchNorm1d(64)
+
+        self.conv2 = Conv1d(in_channels=64, out_channels=128,kernel_size=1)
+        self.bach2 = nn.BatchNorm1d(128)
+
+        self.conv3 = Conv1d(in_channels=128, out_channels=1024,kernel_size=1)
+        self.bach3 = nn.BatchNorm1d(1024)
+
+
+
+        self.linear1 = nn.Linear(1024, 512)
+        self.bach11 = nn.BatchNorm1d(512)
+
+        self.linear2 = nn.Linear(512, 256)
+        self.bach22 = nn.BatchNorm1d(256)
+
+        self.linear3 = nn.Linear(256, dim*dim)
+
+
+
+
+    def forward(self,x):
+
+
+
+        # entrée tensor avec C=3 (B,C,N) -> applique pour chaque point n  en parallèle un conv1d grace kernel 1
+        # dimension 1 =1d des n -> [.....n] la conv1d parcours chaque element n en parallèle
+        # Il prend un nuage de points : x : (B, 3, N) -> (B, 3, 3) Une matrice par objet, qui sera appliquée à tous les points
+        x1 = self.conv1(x)
+        x1 = F.relu(self.bach1(x1))
+
+        x2 = self.conv2(x1)
+        x2 = F.relu(self.bach2(x2))
+
+        x3 = self.conv3(x2)
+        x3 = F.relu(self.bach3(x3))
+
+        # Récupérer une signature globale d’objet.
+        # on garde le max sur chaque feature 1024
+        # point 1 [1 5 10 ...n] -> 1 5
+        # point 2 [1 2 20 ...n] -> 20
+        # on garde le max sur chaque colonne
+        # on obtient le "global feature" de l’objet
+
+
+        # a la fin on a tous les points passés en parrallèle par conv1d et  on garde le max par feature (donc sur la dimension des points)
+        x4 = torch.max(x3,dim=2)[0] # (B, 1024, N)  →  (B, 1024) [0] recupere valeur max au lieu indice 1
+
+        #  couche pleinement connecté compression
+        x5 = self.linear1(x4)
+        x5 = F.relu(self.bach11(x5))
+
+        x6 = self.linear2(x5)
+        x6 = F.relu(self.bach22(x6))
+
+
+        # Matrice prédite par objet , mais à plat c'est un vecteur de taille 9. [0 à 8] valeurs
+        x7 = self.linear3(x6)
+
+
+        # adding to the identity matrix
+        # éviter que le réseau prédise une matrice nulle au début
+        # stabiliser l'entraînement
+        # Sans ça, le réseau peut prédire une matrice nulle
+        # et détruire tous les points → impossible d’apprendre.
+        myidentity = torch.from_numpy(np.eye(self.dim, dtype=np.float32)).view(1, self.dim * self.dim).repeat(
+            x.size()[0], 1) # (3×3) → (1×9)
+        if x.is_cuda:
+            myidentity = myidentity.cuda()
+
+        x7 = x7 + myidentity
+
+        x8 = x7.view(-1, self.dim, self.dim)
+
+        return x8
+
+        
 ```
 
 ### Concept du T-Net
@@ -397,6 +484,98 @@ def forward(self, x):
     x = self.logsoftmax(self.fc7(x))  # (B, 3) - Probabilités log
     
     return x, tn1, tn2
+
+
+    ---------------
+
+    class MyPointNet(nn.Module):
+    def __init__(self, dim=3, dimfeat=64, num_class = 3):
+        super(MyPointNet, self).__init__()
+
+        self.tnet1 = MyTNet(dim)
+
+        self.fc1 = Conv1d(in_channels=dim, out_channels=64,kernel_size=1)
+        self.bach1 = nn.BatchNorm1d(64)
+
+        self.fc2 = Conv1d(in_channels=64, out_channels=64,kernel_size=1)
+        self.bach2 = nn.BatchNorm1d(64)
+
+        self.tnet2 = MyTNet(dimfeat)
+
+        self.fc3 = Conv1d(in_channels=64, out_channels=128,kernel_size=1)
+        self.bach3 = nn.BatchNorm1d(128)
+
+        self.fc4 = Conv1d(in_channels=128, out_channels=1024,kernel_size=1)
+        self.bach4 = nn.BatchNorm1d(1024)
+
+        self.fc5 = nn.Linear(1024, 512)
+        self.bach5 = nn.BatchNorm1d(512)
+
+        self.fc6 = nn.Linear(512, 256)
+        self.bach6 = nn.BatchNorm1d(256)
+
+        self.logsoftmax = nn.LogSoftmax(dim=1)
+        self.fc7 = nn.Linear(256, num_class)
+
+
+
+    def forward(self,x):
+
+        # x:(B,3,N)
+        # tn1 sort -> (B,3,3) la matrice 3*3 par objet pour ça aligne les nuages de points
+        tn1 = self.tnet1(x)
+
+        alignement3= torch.bmm(tn1, x)  # (B, 3, N) matrice (3*3) * nuages de point pour aligner
+
+
+        x1 = F.relu(self.bach1(self.fc1(alignement3)))
+        x2 = F.relu(self.bach2(self.fc2(x1)))
+
+        # # x2:(B,64,N)
+        # tn1 sort -> (B,64,64)
+        tn2 = self.tnet2(x2)
+        alignement64 = torch.bmm(tn2, x2)  # (B, 64, N)
+
+        x3 = F.relu(self.bach3(self.fc3(alignement64)))
+        x4 = F.relu(self.bach4(self.fc4(x3)))
+
+        # vecteur qui identifie l'objet
+        max_global = torch.max(x4,dim=2).values
+
+        x5 = F.relu(self.bach5(self.fc5(max_global)))
+        x6 = F.relu(self.bach6(self.fc6(x5)))
+
+
+        x7 = (self.logsoftmax(self.fc7(x6)))
+
+
+        return x7, tn1, tn2
+
+    
+if __name__ == "__main__":
+
+    myptnet = MyPointNet().to(device)
+
+
+    def tnet_regularization(matrix):
+        # matrix : (B, k, k)
+        I = torch.eye(matrix.size(1)).to(matrix.device)
+        loss = torch.norm(torch.bmm(matrix, matrix.transpose(2, 1)) - I, dim=(1, 2)).mean()
+        return loss
+
+    '''Dans le papier PointNet :
+    
+     Le modèle est sensible au bruit additif gaussien
+     Il est surtout robuste aux transformations géométriques (rotation, translation)"
+     Mais pas au bruit fort → PointNet++ a été créé pour ça.
+     Donc ton comportement est parfaitement cohérent.
+     
+     
+     oblige le réseau à apprendre les formes globales
+    évite qu’il se focalise sur un point précis
+    améliore la généralisation
+    augmente la résistance au bruit du test
+     '''
 ```
 
 ### Flux de Données Détaillé
