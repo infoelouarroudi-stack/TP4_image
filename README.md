@@ -187,33 +187,24 @@ class MyTNet(nn.Module):
     def __init__(self, dim=3):
         super(MyTNet, self).__init__()
 
-
         self.dim = dim
 
         self.conv1 = Conv1d(in_channels=dim, out_channels=64,kernel_size=1)
         self.bach1 = nn.BatchNorm1d(64)
-
         self.conv2 = Conv1d(in_channels=64, out_channels=128,kernel_size=1)
         self.bach2 = nn.BatchNorm1d(128)
-
         self.conv3 = Conv1d(in_channels=128, out_channels=1024,kernel_size=1)
         self.bach3 = nn.BatchNorm1d(1024)
 
 
-
         self.linear1 = nn.Linear(1024, 512)
         self.bach11 = nn.BatchNorm1d(512)
-
         self.linear2 = nn.Linear(512, 256)
         self.bach22 = nn.BatchNorm1d(256)
-
         self.linear3 = nn.Linear(256, dim*dim)
 
 
-
-
     def forward(self,x):
-
 
 
         # entrée tensor avec C=3 (B,C,N) -> applique pour chaque point n  en parallèle un conv1d grace kernel 1
@@ -221,10 +212,8 @@ class MyTNet(nn.Module):
         # Il prend un nuage de points : x : (B, 3, N) -> (B, 3, 3) Une matrice par objet, qui sera appliquée à tous les points
         x1 = self.conv1(x)
         x1 = F.relu(self.bach1(x1))
-
         x2 = self.conv2(x1)
         x2 = F.relu(self.bach2(x2))
-
         x3 = self.conv3(x2)
         x3 = F.relu(self.bach3(x3))
 
@@ -235,21 +224,16 @@ class MyTNet(nn.Module):
         # on garde le max sur chaque colonne
         # on obtient le "global feature" de l’objet
 
-
         # a la fin on a tous les points passés en parrallèle par conv1d et  on garde le max par feature (donc sur la dimension des points)
         x4 = torch.max(x3,dim=2)[0] # (B, 1024, N)  →  (B, 1024) [0] recupere valeur max au lieu indice 1
 
         #  couche pleinement connecté compression
         x5 = self.linear1(x4)
         x5 = F.relu(self.bach11(x5))
-
         x6 = self.linear2(x5)
         x6 = F.relu(self.bach22(x6))
-
-
         # Matrice prédite par objet , mais à plat c'est un vecteur de taille 9. [0 à 8] valeurs
         x7 = self.linear3(x6)
-
 
         # adding to the identity matrix
         # éviter que le réseau prédise une matrice nulle au début
